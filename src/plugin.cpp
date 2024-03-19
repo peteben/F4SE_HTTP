@@ -107,13 +107,7 @@ int generateDictionaryFromJson(json jsonToUse)
 int sendHttpRequestResultToSkyrimEvent(std::string completeReply, std::string papyrusFunctionToCall) {
     json reply = json::parse(completeReply);
     int newHandle = generateDictionaryFromJson(reply);
-    //auto* vm = RE::BSScript::Internal::VirtualMachine::GetSingleton();
-    //auto eventArgs = RE::MakeFunctionArguments((int)newHandle);
-    //auto scrapFunc = (Papyrus::FunctionArgs{vm, newHandle}).get();
-    //RE::BSTSmartPointer<RE::BSScript::IStackCallbackFunctor> callback;
-    //RE::BSFixedString Skse_Http = "SKSE_HTTP";
     SendPapyrusEvent(papyrusFunctionToCall, newHandle);
-    //vm->DispatchStaticCall(Skse_Http, papyrusFunctionToCall, scrapFunc, callback);
     return 0;
 };
 
@@ -122,7 +116,6 @@ void postCallbackMethod(cpr::Response response)
     if (response.status_code == 200)
     {
         std::string onHttpReplyReceived = "OnHttpReplyReceived";
-        //RE::BSFixedString onHttpReplyReceived = "raiseOnHttpReplyReceived";
         sendHttpRequestResultToSkyrimEvent(response.text, onHttpReplyReceived);
     }
     else
@@ -130,7 +123,6 @@ void postCallbackMethod(cpr::Response response)
         json jsonToUse;
         jsonToUse["F4SE_HTTP_error"] = response.error.message;
         std::string onHttpErrorReceived = "OnHttpErrorReceived";
-        //RE::BSFixedString onHttpErrorReceived = "raiseOnHttpErrorReceived";
         sendHttpRequestResultToSkyrimEvent(jsonToUse.dump(), onHttpErrorReceived);
     }
 }
@@ -301,18 +293,6 @@ bool Bind(RE::BSScript::IVirtualMachine* vm) {
     vm->BindNativeMethod(className, "hasKey", hasKeyRelay);    
     return true;
 };
-
-//SKSEPluginLoad(const SKSE::LoadInterface* skse) {
-//    SKSE::Init(skse);
-//    SKSE::GetPapyrusInterface()->Register(Bind);
-//    return true;
-//};
-
-//F4SEPlugin_Load(const F4SE::LoadInterface* a_f4se) {    
-//    F4SE::Init(a_f4se);
-//    F4SE::GetPapyrusInterface()->Register(Bind);
-//    return true;
-//}
 
 extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface* a_f4se, F4SE::PluginInfo* a_info) {
     a_info->infoVersion = F4SE::PluginInfo::kVersion;

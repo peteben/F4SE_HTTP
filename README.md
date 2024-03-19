@@ -16,7 +16,7 @@ A F4SE plugin to connect to a local http server and exchange strongly typed JSON
     - [x] cpr
     - [x] nlohmann/json
 - [x] Make sure this works on
-    - [ ] Fallout 4
+    - [x] Fallout 4
     - [ ] Fallout VR
 
 ## Usage
@@ -51,12 +51,13 @@ endFunction
 Receive the reply from the http server
 ```Papyrus
 event OnInit()
-    ;Register for the event *F4SE_HTTP_OnHttpReplyReceived* using a custom event
-    RegisterForModEvent("F4SE_HTTP_OnHttpReplyReceived","OnHttpReplyReceived")
+    ;Register for the event *OnHttpReplyReceived* or/and *OnHttpErrorReceived* using a custom event
+    RegisterForExternalEvent("OnHttpReplyReceived","OnHttpReplyReceived")
+    RegisterForExternalEvent("OnHttpErrorReceived","OnHttpErrorReceived")
 endEvent
 
-;*F4SE_HTTP_OnHttpReplyReceived* provides a handle to a dictionary that contains the contents of the reply
-event OnHttpReplyReceived(int typedDictionaryHandle)
+;*OnHttpReplyReceived* provides a handle to a dictionary that contains the contents of the reply
+function OnHttpReplyReceived(int typedDictionaryHandle)
     ;retrieve string from dictionary using key "replytype". The last parameter is a default that will be used if the value does not exist
     string replyType = F4SE_HTTP.getString(typedDictionaryHandle, "replytype", "Error: No reply type received")
     string npc = F4SE_HTTP.getString(typedDictionaryHandle, "npc", "Error: No npc to say stuff")
@@ -67,9 +68,11 @@ event OnHttpReplyReceived(int typedDictionaryHandle)
     string current_location = F4SE_HTTP.getString(contextHandle, "location", "Only the gods know where")
     int time = F4SE_HTTP.getInt(contextHandle, "time", 0)
     DoSomethingWithAllThisStuff()
-endEvent
+endFunction
 
 ```
-Uses https://github.com/alandtse/CommonLibF4
+
+Uses https://github.com/alandtse/CommonLibF4 Many thanks!
+
 Based on https://github.com/SkyrimScripting/SKSE_Templates Many thanks!
 

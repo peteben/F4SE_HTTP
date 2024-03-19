@@ -13,9 +13,9 @@
         <!-- Set the name of your mod: -->
         <Variable Name="ModName" Value="F4SE_HTTP" />        
         <!-- Path to where your Skyrim game folder is -->   
-        <Variable Name="GameFolder" Value="H:\Spiele\Steam\steamapps\common\Fallout 4" />
+        <Variable Name="GameFolder" Value="<Path to your Fallout 4 game folder here>" />
         <!-- The folder where you store all of your mods -->
-        <Variable Name="ModsFolder" Value="C:\Users\TK\AppData\Local\ModOrganizer\Fallout 4 Development\mods" />
+        <Variable Name="ModsFolder" Value="<Path to your MO2 mods folder here>" />
     </Variables>
     <Imports>
         <Import>@GameFolder\Data\Scripts\Source\Base</Import>
