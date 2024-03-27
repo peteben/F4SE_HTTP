@@ -130,6 +130,7 @@ void postCallbackMethod(cpr::Response response)
 void sendLocalhostHttpRequest(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate,
                               int typedDictionaryHandle, int port,
                               std::string route, int timeout) {
+    toLowerCase(&route);
     json newJson = getJsonFromHandle(typedDictionaryHandle);
     std::string textToSend = newJson.dump();
     std::string url = "http://localhost:" + std::to_string(port) + "/" + route;
@@ -226,33 +227,53 @@ void setNestedDictionaryRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t
 void setStringArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key, const std::vector<std::string> value) {
     toLowerCase(&key);
     std::vector<std::string> vector;
-    for (int i = 0; i < value.size(); ++i) vector.push_back(value[i]);
+    try {
+        for (int i = 0; i < value.size(); ++i) vector.push_back(value[i]);
+    }
+    catch (...) {
+    }
     setStringArray(object, key, vector);
 };
 void setIntArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object,
                       std::string key, const std::vector<int> value) {
     toLowerCase(&key);
     std::vector<int> vector;
-    for (int i = 0; i < value.size(); ++i) vector.push_back(value[i]);
+    try {
+        for (int i = 0; i < value.size(); ++i) vector.push_back(value[i]);
+    }
+    catch (...) {
+    }
     setIntArray(object, key, vector);
 };
 void setFloatArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object,
                         std::string key, const std::vector<float> value) {
     toLowerCase(&key);
     std::vector<float> vector;
-    for (int i = 0; i < value.size(); ++i) vector.push_back(value[i]);
+    try {
+        for (int i = 0; i < value.size(); ++i) vector.push_back(value[i]);
+    }
+    catch (...) {
+    }
     setFloatArray(object, key, vector);
 };
 void setBoolArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key, std::vector<bool> value) {
     toLowerCase(&key);
     std::vector<bool> vector;
-    for (int i = 0; i < value.size(); ++i) vector.push_back(value[i]);
+    try {
+        for (int i = 0; i < value.size(); ++i) vector.push_back(value[i]);
+    }
+    catch (...) {
+    }
     setBoolArray(object, key, vector);
 };
 void setNestedDictionariesArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key, const std::vector<int> value) {
     toLowerCase(&key);
     std::vector<int> vector;
-    for (int i = 0; i < value.size(); ++i) vector.push_back(value[i]);
+    try {
+        for (int i = 0; i < value.size(); ++i) vector.push_back(value[i]);
+    }
+    catch (...) {
+    }
     setArrayOfNestedDictionaries(object, key, vector);
 };
 
