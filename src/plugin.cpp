@@ -14,6 +14,17 @@ void toLowerCase(std::string* input) {
     std::transform(input->begin(), input->end(), input->begin(), [](unsigned char c) { return std::tolower(c); });
 };
 
+bool test_utf8(std::string input) {
+    try {
+        json test = { "test", input };
+        test.dump();
+        return true;
+    }
+    catch (...) {
+        return false;
+    }
+};
+
 json getJsonFromHandle(int typedDictionaryHandle)
 {
     std::shared_ptr<TypedDictionary> dict = SKSE_HTTP_TypedDictionary::dicNestedDictionariesValues[typedDictionaryHandle];
@@ -107,10 +118,15 @@ int generateDictionaryFromJson(json jsonToUse)
 };
 
 int sendHttpRequestResultToSkyrimEvent(std::string completeReply, std::string papyrusFunctionToCall) {
-    json reply = json::parse(completeReply);
-    int newHandle = generateDictionaryFromJson(reply);
-    SendPapyrusEvent(papyrusFunctionToCall, newHandle);
-    return 0;
+    try {
+        json reply = json::parse(completeReply);
+        int newHandle = generateDictionaryFromJson(reply);
+        SendPapyrusEvent(papyrusFunctionToCall, newHandle);
+        return 0;
+    }
+    catch (...) {
+        return 1;
+    }
 };
 
 void postCallbackMethod(cpr::Response response)
@@ -132,17 +148,22 @@ void postCallbackMethod(cpr::Response response)
 void sendLocalhostHttpRequest(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate,
                               int typedDictionaryHandle, int port,
                               std::string route, int timeout) {
-    toLowerCase(&route);
-    json newJson = getJsonFromHandle(typedDictionaryHandle);
-    std::string textToSend = newJson.dump();
-    std::string url = "http://localhost:" + std::to_string(port) + "/" + route;
-    cpr::PostCallback(postCallbackMethod,
-                        cpr::Url{url},
-                        cpr::ConnectTimeout {timeout},
-                        cpr::Authentication{"user", "pass", cpr::AuthMode::BASIC},
-                        cpr::Header{{"Content-Type", "application/json"}}, 
-                        cpr::Header{{"accept", "application/json"}},
-                        cpr::Body{textToSend});
+    try {
+        toLowerCase(&route);
+        json newJson = getJsonFromHandle(typedDictionaryHandle);
+        std::string textToSend = newJson.dump();
+        std::string url = "http://localhost:" + std::to_string(port) + "/" + route;
+        cpr::PostCallback(postCallbackMethod,
+                            cpr::Url{url},
+                            cpr::ConnectTimeout {timeout},
+                            cpr::Authentication{"user", "pass", cpr::AuthMode::BASIC},
+                            cpr::Header{{"Content-Type", "application/json"}}, 
+                            cpr::Header{{"accept", "application/json"}},
+                            cpr::Body{textToSend});
+    }
+    catch (...) {
+
+    }
 };
 
 void clearAllDictionaries(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate) { clearAll(); };
@@ -205,10 +226,12 @@ std::vector<int> getNestedDictionariesArrayRelay(RE::BSScript::IVirtualMachine& 
 
 // Inserts @key: @value pair. Replaces existing pair with the same @key
 
-void setStringRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object,
+bool setStringRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object,
                     std::string key, std::string value) {
     toLowerCase(&key);
+    if (!test_utf8(value)) return false;
     setString(object, key, value);
+    return true;
 };
 void setIntRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key, int value) {
     toLowerCase(&key);
@@ -226,15 +249,24 @@ void setNestedDictionaryRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t
     toLowerCase(&key);
     setNestedDictionary(object, key, value);
 };
-void setStringArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key, const std::vector<std::string> value) {
+bool setStringArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key, const std::vector<std::string> value) {
     toLowerCase(&key);
     std::vector<std::string> vector;
+    bool result = true;
     try {
-        for (int i = 0; i < value.size(); ++i) vector.push_back(value[i]);
+        for (int i = 0; i < value.size(); ++i) {
+            if (test_utf8(value[i])) {
+                vector.push_back(value[i]);
+            }
+            else {
+                result = false;
+            }
+        }        
     }
     catch (...) {
     }
     setStringArray(object, key, vector);
+    return result;
 };
 void setIntArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object,
                       std::string key, const std::vector<int> value) {
@@ -329,3 +361,18 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f
     F4SE::GetPapyrusInterface()->Register(Bind);
     return true;
 };
+
+F4SE_EXPORT constinit auto F4SEPlugin_Version = []() noexcept {
+    F4SE::PluginVersionData data{};
+
+    data.PluginName("F4SE_HTTP");
+    data.PluginVersion(REL::Version("1.0.0"));
+    data.AuthorName("Leidtier");
+    data.UsesAddressLibrary(true);
+    data.UsesSigScanning(false);
+    data.IsLayoutDependent(true);
+    data.HasNoStructUse(false);
+    data.CompatibleVersions({ F4SE::RUNTIME_LATEST, F4SE::RUNTIME_LATEST_VR });
+
+    return data;
+}();
