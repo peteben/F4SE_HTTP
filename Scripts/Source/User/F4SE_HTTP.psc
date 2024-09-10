@@ -35,3 +35,6 @@ function setNestedDictionariesArray(Int object, String key, Int[] value) global 
 Bool function hasKey(Int object, String key) global native
 
 Int function valueType(Int object, String key) global native
+
+Function RegisterForHttpEvent(var scriptparm) global native
+

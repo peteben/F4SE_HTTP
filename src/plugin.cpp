@@ -10,6 +10,10 @@
 using json = nlohmann::json;
 using namespace SKSE_HTTP_TypedDictionary;
 
+extern void RegisterForHttpEvent(std::monostate, const RE::BSScript::Variable* a_this);
+extern void SendToPapyrus(int handle, std::string functionName);
+
+
 void toLowerCase(std::string* input) {
     std::transform(input->begin(), input->end(), input->begin(), [](unsigned char c) { return std::tolower(c); });
 };
@@ -117,17 +121,32 @@ int generateDictionaryFromJson(json jsonToUse)
     return handle;
 };
 
-int sendHttpRequestResultToSkyrimEvent(std::string completeReply, std::string papyrusFunctionToCall) {
+REL::Version GameVer;
+
+bool isNG() {
+    return (GameVer >= F4SE::RUNTIME_1_10_980);
+    }
+
+// Notify game that data is ready to be consumed
+
+int sendHttpRequestResultToSkyrimEvent(std::string completeReply, std::string papyrusFunctionToCall)
+{
     try {
         json reply = json::parse(completeReply);
-        int newHandle = generateDictionaryFromJson(reply);
-        SendPapyrusEvent(papyrusFunctionToCall, newHandle);
+        int handle = generateDictionaryFromJson(reply);
+
+        if (isNG()) {
+           SendToPapyrus(handle, papyrusFunctionToCall);
+           }
+        else {
+            SendPapyrusEvent(papyrusFunctionToCall, handle);
+            }
         return 0;
-    }
+        }
     catch (...) {
         return 1;
-    }
-};
+        }
+}
 
 void postCallbackMethod(cpr::Response response)
 { 
@@ -344,6 +363,7 @@ bool Bind(RE::BSScript::IVirtualMachine* vm) {
     vm->BindNativeMethod(className, "setFloatArray", setFloatArrayRelay);
     vm->BindNativeMethod(className, "setBoolArray", setBoolArrayRelay);
     vm->BindNativeMethod(className, "setNestedDictionariesArray", setNestedDictionariesArrayRelay);
+    vm->BindNativeMethod(className, "RegisterForHttpEvent", RegisterForHttpEvent);
 
     vm->BindNativeMethod(className, "hasKey", hasKeyRelay);    
     return true;
@@ -359,6 +379,7 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface* a
 extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f4se) {
     F4SE::Init(a_f4se);
     F4SE::GetPapyrusInterface()->Register(Bind);
+    GameVer = a_f4se->RuntimeVersion();
     return true;
 };
 

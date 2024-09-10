@@ -23,7 +23,8 @@ option(BUILD_STATIC_LIBS ON)
 set(SOURCES
         src/TypedDictionary.cpp
         src/SKSE_HTTP_TypedDictionary.cpp
-        src/plugin.cpp)
+        src/plugin.cpp
+        src/SendPP.cpp)
 
 source_group(
         TREE ${CMAKE_CURRENT_SOURCE_DIR}
