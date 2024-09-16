@@ -23,8 +23,7 @@ option(BUILD_STATIC_LIBS ON)
 set(SOURCES
         src/TypedDictionary.cpp
         src/SKSE_HTTP_TypedDictionary.cpp
-        src/plugin.cpp
-        src/SendPP.cpp)
+        src/plugin.cpp)
 
 source_group(
         TREE ${CMAKE_CURRENT_SOURCE_DIR}
@@ -37,13 +36,16 @@ FetchContent_MakeAvailable(cpr)
 FetchContent_Declare(json URL https://github.com/nlohmann/json/releases/download/v3.11.3/json.tar.xz)
 FetchContent_MakeAvailable(json)
 
+find_package(fmt REQUIRED CONFIG)
+find_package(spdlog REQUIRED CONFIG)
+
 # If you're not using a mod manager, you probably want the SKSE plugin to go
 # inside of your Skyrim "Data" folder.
 #
-# To do this automatically, set the `SKYRIM_FOLDER` environment variable
+# To do this automatically, set the `Fallout4Path` environment variable
 # to the path of your Skyrim Special Edition folder
-if(DEFINED ENV{SKYRIM_FOLDER} AND IS_DIRECTORY "$ENV{SKYRIM_FOLDER}/Data")
-    set(OUTPUT_FOLDER "$ENV{SKYRIM_FOLDER}/Data")
+if(DEFINED ENV{Fallout4Path} AND IS_DIRECTORY "$ENV{Fallout4Path}/Data")
+    set(OUTPUT_FOLDER "$ENV{Fallout4Path}/Data")
 endif()
 
 # If you're using Mod Organizer 2 or Vortex, you might want this to go inside
@@ -88,6 +90,8 @@ target_include_directories(${PROJECT_NAME}
 
 target_link_libraries(${PROJECT_NAME} 
         PRIVATE 
+ 		fmt::fmt
+		spdlog::spdlog
         cpr::cpr)
 
 target_link_libraries(${PROJECT_NAME} 

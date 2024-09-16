@@ -2,17 +2,27 @@
 #include <cpr\cpr.h>
 #include <SKSE_HTTP_TypedDictionary.h>
 #include <nlohmann\json.hpp>
-#include "FunctionArgs.h"
-#include "SendPapyrusEvent.h"
 
 #define DLLEXPORT __declspec(dllexport)
 
 using json = nlohmann::json;
 using namespace SKSE_HTTP_TypedDictionary;
 
-extern void RegisterForHttpEvent(std::monostate, const RE::BSScript::Variable* a_this);
-extern void SendToPapyrus(int handle, std::string functionName);
+void init_log() {
+    std::optional<std::filesystem::path> logpath = logger::log_directory();
 
+    const char* plugin_name = "F4SE_HTTP";
+    *logpath /= fmt::format(FMT_STRING("{}.log"), plugin_name);
+    auto sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(logpath->string(), true);
+
+    auto log = std::make_shared<spdlog::logger>("global log"s, std::move(sink));
+
+    log->set_level(spdlog::level::trace);
+    log->flush_on(spdlog::level::trace);
+
+    spdlog::set_default_logger(std::move(log));
+    spdlog::set_pattern("[%T.%e] [%=5t] [%L] %v"s);
+    }
 
 void toLowerCase(std::string* input) {
     std::transform(input->begin(), input->end(), input->begin(), [](unsigned char c) { return std::tolower(c); });
@@ -121,25 +131,80 @@ int generateDictionaryFromJson(json jsonToUse)
     return handle;
 };
 
-REL::Version GameVer;
+// Queue to store the handles of the received Jsons
+// While waiting for the gamme to retrieve them
 
-bool isNG() {
-    return (GameVer >= F4SE::RUNTIME_1_10_980);
+std::mutex mx;
+std::queue<int> handleQueue;
+
+// Signal the game by sending an unassigned virtual keystroke
+
+int SignalGame(WORD wkey) {
+    INPUT keyEvent[2];
+
+    keyEvent[0].type = INPUT_KEYBOARD;
+    keyEvent[0].ki.wVk = wkey;
+    keyEvent[0].ki.dwFlags = 0;
+    keyEvent[0].ki.time = 0;
+    keyEvent[0].ki.dwExtraInfo = GetMessageExtraInfo();
+    keyEvent[0].ki.wScan = (WORD)MapVirtualKeyW(wkey, 0);
+    UINT ret = SendInput(1, keyEvent, sizeof(INPUT));
+
+    if (ret != 1) {
+        return 1;
+        }
+    Sleep(20);
+
+    keyEvent[0].type = INPUT_KEYBOARD;
+    keyEvent[0].ki.wVk = wkey;
+    keyEvent[0].ki.dwFlags = KEYEVENTF_KEYUP;
+    keyEvent[0].ki.time = 0;
+    keyEvent[0].ki.dwExtraInfo = GetMessageExtraInfo();
+    keyEvent[0].ki.wScan = (WORD)MapVirtualKeyW(wkey, 0);
+    ret = SendInput(1, keyEvent, sizeof(INPUT));
+
+    if (ret != 1) {
+        return 1;
+        }
+    return 0;
+    }
+
+// Get next handle from the queue
+
+clock_t data_ready_t;
+
+int GetHandle(std::monostate) {
+    std::lock_guard lock(mx);
+
+    if (!handleQueue.empty()) {
+        int handle = handleQueue.front();
+        handleQueue.pop();
+        float latency = (clock() - data_ready_t) / 1000.0;
+        logger::info("Latency {:f}", latency);              // test to see how long it takes the script to grab handle
+        return handle;
+        }
+    return -1;
     }
 
 // Notify game that data is ready to be consumed
 
-int sendHttpRequestResultToSkyrimEvent(std::string completeReply, std::string papyrusFunctionToCall)
+int sendHttpRequestResultToSkyrimEvent(std::string completeReply, bool isError)
 {
     try {
         json reply = json::parse(completeReply);
         int handle = generateDictionaryFromJson(reply);
+ 
+        if (isError) handle += 100000;              // Flag as error
 
-        if (isNG()) {
-           SendToPapyrus(handle, papyrusFunctionToCall);
-           }
-        else {
-            SendPapyrusEvent(papyrusFunctionToCall, handle);
+        {
+            std::lock_guard lock(mx);
+            bool queueEmpty = handleQueue.empty();
+
+             handleQueue.push(handle);
+            if (queueEmpty) {
+                SignalGame(0x97);
+                }
+            data_ready_t = clock();                 // Time when data is made available
             }
         return 0;
         }
@@ -152,21 +217,21 @@ void postCallbackMethod(cpr::Response response)
 { 
     if (response.status_code == 200)
     {
-        std::string onHttpReplyReceived = "OnHttpReplyReceived";
-        sendHttpRequestResultToSkyrimEvent(response.text, onHttpReplyReceived);
+        sendHttpRequestResultToSkyrimEvent(response.text, false);
     }
     else
     {
         json jsonToUse;
         jsonToUse["F4SE_HTTP_error"] = response.error.message;
-        std::string onHttpErrorReceived = "OnHttpErrorReceived";
-        sendHttpRequestResultToSkyrimEvent(jsonToUse.dump(), onHttpErrorReceived);
+        logger::info("HTTP error received [{:d}] {}", response.status_code, response.error.message);
+        sendHttpRequestResultToSkyrimEvent(jsonToUse.dump(), true);
     }
 }
 
-void sendLocalhostHttpRequest(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate,
+void sendLocalhostHttpRequest(std::monostate,
                               int typedDictionaryHandle, int port,
                               std::string route, int timeout) {
+    logger::info("sendHTTP {:d}", typedDictionaryHandle);
     try {
         toLowerCase(&route);
         json newJson = getJsonFromHandle(typedDictionaryHandle);
@@ -185,93 +250,101 @@ void sendLocalhostHttpRequest(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t
     }
 };
 
-void clearAllDictionaries(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate) { clearAll(); };
+void clearAllDictionaries(std::monostate) { clearAll(); };
 
-int createDictionaryRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate) {
+int createDictionaryRelay(std::monostate) {
     return createDictionary();
 };
 
 // Returns the value associated with the @key. If not, returns @default value
-std::string getStringRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object,
-                           std::string key, std::string defaultValue) {
+std::string getStringRelay(std::monostate, int object, std::string key, std::string defaultValue) {
     toLowerCase(&key);
     return getString(object, key, defaultValue);
 };
-int getIntRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object,
-                std::string key, int defaultValue) {
+int getIntRelay(std::monostate, int object, std::string key, int defaultValue) {
     toLowerCase(&key);
     return getInt(object, key, defaultValue);
 };
-float getFloatRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object,
-                    std::string key, float defaultValue) {
+float getFloatRelay(std::monostate, int object, std::string key, float defaultValue) {
     toLowerCase(&key);
     return getFloat(object, key, defaultValue);
 };
-bool getBoolRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object,
-                  std::string key, bool defaultValue) {
+bool getBoolRelay(std::monostate, int object, std::string key, bool defaultValue) {
     toLowerCase(&key);
     return getBool(object, key, defaultValue);
 };
-int getNestedDictionaryRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object,
+int getNestedDictionaryRelay(std::monostate, int object,
                              std::string key, int defaultValue) {
     toLowerCase(&key);
     return getNestedDictionary(object, key, defaultValue);
 };
-std::vector<std::string> getStringArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID,
-                                             std::monostate, int object, std::string key) {
+std::vector<std::string> getStringArrayRelay(std::monostate, int object, std::string key) {
     toLowerCase(&key);
     return getStringArray(object, key);
 };
-std::vector<int> getIntArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate,
+std::vector<int> getIntArrayRelay(std::monostate,
                                   int object, std::string key) {
     toLowerCase(&key);
     return getIntArray(object, key);
 };
-std::vector<float> getFloatArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate,
+std::vector<float> getFloatArrayRelay(std::monostate,
                                       int object, std::string key) {
     toLowerCase(&key);
     return getFloatArray(object, key);
 };
-std::vector<bool> getBoolArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate,
+std::vector<bool> getBoolArrayRelay(std::monostate,
                                     int object, std::string key) {
     toLowerCase(&key);
     return getBoolArray(object, key);
 };
-std::vector<int> getNestedDictionariesArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID,
-                                                 std::monostate, int object, std::string key) {
+std::vector<int> getNestedDictionariesArrayRelay(std::monostate, int object, std::string key) {
     toLowerCase(&key);
     return getArrayOfNestedDictionaries(object, key);
 };
 
 // Inserts @key: @value pair. Replaces existing pair with the same @key
 
-bool setStringRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object,
+bool setStringRelay(std::monostate, int object,
                     std::string key, std::string value) {
     toLowerCase(&key);
+    //std::string before = getJsonFromHandle(object).dump();
+    //logger::info("SetString into: {:d} {} {}", object, key, value);
+    //logger::info("Before: {}", before);
     if (!test_utf8(value)) return false;
     setString(object, key, value);
+    //std::string after = getJsonFromHandle(object).dump();
+    //logger::info("After: {}", after);
     return true;
 };
-void setIntRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key, int value) {
+void setIntRelay(std::monostate, int object, std::string key, int value) {
     toLowerCase(&key);
     setInt(object, key, value);
 };
-void setFloatRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key, float value) {
+void setFloatRelay(std::monostate, int object, std::string key, float value) {
     toLowerCase(&key);
     setFloat(object, key, value);
 };
-void setBoolRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key, bool value) {
+void setBoolRelay(std::monostate, int object, std::string key, bool value) {
     toLowerCase(&key);
     setBool(object, key, value);
 };
-void setNestedDictionaryRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key, int value) {
+void setNestedDictionaryRelay(std::monostate, int object, std::string key, int value) {
     toLowerCase(&key);
+    //std::string before = getJsonFromHandle(object).dump();
+    //logger::info("SetNestedDict into: {:d} {} {:d}", object, key, value);
+    //logger::info("Before: {}", before);
     setNestedDictionary(object, key, value);
+    //std::string after = getJsonFromHandle(object).dump();
+    //logger::info("After: {}", after);
+
 };
-bool setStringArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key, const std::vector<std::string> value) {
+bool setStringArrayRelay(std::monostate, int object, std::string key, const std::vector<std::string> value) {
     toLowerCase(&key);
     std::vector<std::string> vector;
     bool result = true;
+    //std::string before = getJsonFromHandle(object).dump();
+    //logger::info("SetStringArray into: {:d} {}", object, key);
+    //logger::info("Before: {}", before);
     try {
         for (int i = 0; i < value.size(); ++i) {
             if (test_utf8(value[i])) {
@@ -285,9 +358,11 @@ bool setStringArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_st
     catch (...) {
     }
     setStringArray(object, key, vector);
+    //std::string after = getJsonFromHandle(object).dump();
+    //logger::info("After: {}", after);
     return result;
 };
-void setIntArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object,
+void setIntArrayRelay(std::monostate, int object,
                       std::string key, const std::vector<int> value) {
     toLowerCase(&key);
     std::vector<int> vector;
@@ -298,7 +373,7 @@ void setIntArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stack
     }
     setIntArray(object, key, vector);
 };
-void setFloatArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object,
+void setFloatArrayRelay(std::monostate, int object,
                         std::string key, const std::vector<float> value) {
     toLowerCase(&key);
     std::vector<float> vector;
@@ -309,7 +384,7 @@ void setFloatArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_sta
     }
     setFloatArray(object, key, vector);
 };
-void setBoolArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key, std::vector<bool> value) {
+void setBoolArrayRelay(std::monostate, int object, std::string key, std::vector<bool> value) {
     toLowerCase(&key);
     std::vector<bool> vector;
     try {
@@ -319,7 +394,7 @@ void setBoolArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stac
     }
     setBoolArray(object, key, vector);
 };
-void setNestedDictionariesArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key, const std::vector<int> value) {
+void setNestedDictionariesArrayRelay(std::monostate, int object, std::string key, const std::vector<int> value) {
     toLowerCase(&key);
     std::vector<int> vector;
     try {
@@ -332,7 +407,7 @@ void setNestedDictionariesArrayRelay(RE::BSScript::IVirtualMachine& a_vm, std::u
 
 
 //  Returns true, if the container has @key: value pair
-bool hasKeyRelay(RE::BSScript::IVirtualMachine& a_vm, std::uint32_t a_stackID, std::monostate, int object, std::string key) { return hasKey(object, key); };
+bool hasKeyRelay(std::monostate, int object, std::string key) { return hasKey(object, key); };
 
 
 bool Bind(RE::BSScript::IVirtualMachine* vm) {
@@ -363,8 +438,8 @@ bool Bind(RE::BSScript::IVirtualMachine* vm) {
     vm->BindNativeMethod(className, "setFloatArray", setFloatArrayRelay);
     vm->BindNativeMethod(className, "setBoolArray", setBoolArrayRelay);
     vm->BindNativeMethod(className, "setNestedDictionariesArray", setNestedDictionariesArrayRelay);
-    vm->BindNativeMethod(className, "RegisterForHttpEvent", RegisterForHttpEvent);
 
+    vm->BindNativeMethod(className, "GetHandle", GetHandle);
     vm->BindNativeMethod(className, "hasKey", hasKeyRelay);    
     return true;
 };
@@ -378,22 +453,27 @@ extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Query(const F4SE::QueryInterface* a
 
 extern "C" DLLEXPORT bool F4SEAPI F4SEPlugin_Load(const F4SE::LoadInterface* a_f4se) {
     F4SE::Init(a_f4se);
+
+    init_log();
+
     F4SE::GetPapyrusInterface()->Register(Bind);
-    GameVer = a_f4se->RuntimeVersion();
     return true;
 };
 
-F4SE_EXPORT constinit auto F4SEPlugin_Version = []() noexcept {
+// Only used by F4SE 0.7.1 and above
+
+extern "C" DLLEXPORT  constinit auto F4SEPlugin_Version = []() noexcept {
     F4SE::PluginVersionData data{};
 
     data.PluginName("F4SE_HTTP");
-    data.PluginVersion(REL::Version("1.0.0"));
+    data.PluginVersion(REL::Version(1,0,0));
     data.AuthorName("Leidtier");
     data.UsesAddressLibrary(true);
     data.UsesSigScanning(false);
-    data.IsLayoutDependent(true);
-    data.HasNoStructUse(false);
-    data.CompatibleVersions({ F4SE::RUNTIME_LATEST, F4SE::RUNTIME_LATEST_VR });
+    data.IsLayoutDependent(false);
+    data.HasNoStructUse(true);
+    data.CompatibleVersions({ F4SE::RUNTIME_LATEST, F4SE::RUNTIME_LATEST_VR, F4SE::RUNTIME_1_10_163 });
 
     return data;
 }();
+
