@@ -174,16 +174,21 @@ int SignalGame(WORD wkey) {
 clock_t data_ready_t;
 
 int GetHandle(std::monostate) {
-    std::lock_guard lock(mx);
-
-    if (!handleQueue.empty()) {
-        int handle = handleQueue.front();
-        handleQueue.pop();
-        float latency = (clock() - data_ready_t) / 1000.0;
-        logger::info("Latency {:f}", latency);              // test to see how long it takes the script to grab handle
-        return handle;
+    int handle = -1;
+    {
+        std::lock_guard lock(mx);
+ 
+        if (!handleQueue.empty()) {
+            handle = handleQueue.front();
+            handleQueue.pop();
+            }
         }
-    return -1;
+
+    if (handle != -1) {
+        float latency = (clock() - data_ready_t) / 1000.0;
+        logger::info("Handle[{:d}] Latency {:f}", handle, latency);              // test to see how long it takes the script to grab handle
+        }
+    return handle;
     }
 
 // Notify game that data is ready to be consumed
@@ -193,6 +198,8 @@ int sendHttpRequestResultToSkyrimEvent(std::string completeReply, bool isError)
     try {
         json reply = json::parse(completeReply);
         int handle = generateDictionaryFromJson(reply);
+
+        logger::info("sendHttptoGame {:d} {}", handle, completeReply);
  
         if (isError) handle += 100000;              // Flag as error
 
@@ -202,6 +209,7 @@ int sendHttpRequestResultToSkyrimEvent(std::string completeReply, bool isError)
 
              handleQueue.push(handle);
             if (queueEmpty) {
+                logger::info("Signalling");
                 SignalGame(0x97);
                 }
             data_ready_t = clock();                 // Time when data is made available
@@ -231,11 +239,11 @@ void postCallbackMethod(cpr::Response response)
 void sendLocalhostHttpRequest(std::monostate,
                               int typedDictionaryHandle, int port,
                               std::string route, int timeout) {
-    logger::info("sendHTTP {:d}", typedDictionaryHandle);
     try {
         toLowerCase(&route);
         json newJson = getJsonFromHandle(typedDictionaryHandle);
         std::string textToSend = newJson.dump();
+        logger::info("sendHTTPtoMantella {:d} {}", typedDictionaryHandle, textToSend);
         std::string url = "http://localhost:" + std::to_string(port) + "/" + route;
         cpr::PostCallback(postCallbackMethod,
                             cpr::Url{url},
@@ -259,7 +267,9 @@ int createDictionaryRelay(std::monostate) {
 // Returns the value associated with the @key. If not, returns @default value
 std::string getStringRelay(std::monostate, int object, std::string key, std::string defaultValue) {
     toLowerCase(&key);
-    return getString(object, key, defaultValue);
+    std::string val = getString(object, key, defaultValue);
+    //logger::info("  GetString {} {}", key, val);
+    return val;
 };
 int getIntRelay(std::monostate, int object, std::string key, int defaultValue) {
     toLowerCase(&key);
