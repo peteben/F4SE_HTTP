@@ -186,7 +186,7 @@ int GetHandle(std::monostate) {
 
     if (handle != -1) {
         float latency = (clock() - data_ready_t) / 1000.0;
-        logger::info("Handle[{:d}] Latency {:f}", handle, latency);              // test to see how long it takes the script to grab handle
+        //logger::info("Handle[{:d}] Latency {:f}", handle, latency);              // test to see how long it takes the script to grab handle
         }
     return handle;
     }
@@ -199,7 +199,7 @@ int sendHttpRequestResultToSkyrimEvent(std::string completeReply, bool isError)
         json reply = json::parse(completeReply);
         int handle = generateDictionaryFromJson(reply);
 
-        logger::info("sendHttptoGame {:d} {}", handle, completeReply);
+        //logger::info("sendHttptoGame {:d} {}", handle, completeReply);
  
         if (isError) handle += 100000;              // Flag as error
 
@@ -209,7 +209,7 @@ int sendHttpRequestResultToSkyrimEvent(std::string completeReply, bool isError)
 
              handleQueue.push(handle);
             if (queueEmpty) {
-                logger::info("Signalling");
+                //logger::info("Signalling");
                 SignalGame(0x97);
                 }
             data_ready_t = clock();                 // Time when data is made available
@@ -243,7 +243,7 @@ void sendLocalhostHttpRequest(std::monostate,
         toLowerCase(&route);
         json newJson = getJsonFromHandle(typedDictionaryHandle);
         std::string textToSend = newJson.dump();
-        logger::info("sendHTTPtoMantella {:d} {}", typedDictionaryHandle, textToSend);
+        //logger::info("sendHTTPtoMantella {:d} {}", typedDictionaryHandle, textToSend);
         std::string url = "http://localhost:" + std::to_string(port) + "/" + route;
         cpr::PostCallback(postCallbackMethod,
                             cpr::Url{url},
