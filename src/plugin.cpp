@@ -180,6 +180,12 @@ int GetHandle(std::monostate) {
  
         if (!handleQueue.empty()) {
             handle = handleQueue.front();
+            std::string replytype = getString(handle, "mantella_reply_type", "none");
+
+            logger::info("READ: [{:d}] {}", handle, replytype);
+            if (replytype == "none") {
+                logger::info("JSON: {}", getJsonFromHandle(handle));
+                }
             handleQueue.pop();
             }
         }
@@ -199,7 +205,7 @@ int sendHttpRequestResultToSkyrimEvent(std::string completeReply, bool isError)
         json reply = json::parse(completeReply);
         int handle = generateDictionaryFromJson(reply);
 
-        //logger::info("sendHttptoGame {:d} {}", handle, completeReply);
+        logger::info("RECV: [{:d}] {}", handle, getString(handle,"mantella_reply_type", "none"));
  
         if (isError) handle += 100000;              // Flag as error
 
@@ -207,7 +213,7 @@ int sendHttpRequestResultToSkyrimEvent(std::string completeReply, bool isError)
             std::lock_guard lock(mx);
             bool queueEmpty = handleQueue.empty();
 
-             handleQueue.push(handle);
+            handleQueue.push(handle);
             if (queueEmpty) {
                 //logger::info("Signalling");
                 SignalGame(0x97);
@@ -243,7 +249,7 @@ void sendLocalhostHttpRequest(std::monostate,
         toLowerCase(&route);
         json newJson = getJsonFromHandle(typedDictionaryHandle);
         std::string textToSend = newJson.dump();
-        //logger::info("sendHTTPtoMantella {:d} {}", typedDictionaryHandle, textToSend);
+        logger::info("SEND: {}", getString(typedDictionaryHandle, "mantella_request_type", "none"));
         std::string url = "http://localhost:" + std::to_string(port) + "/" + route;
         cpr::PostCallback(postCallbackMethod,
                             cpr::Url{url},
@@ -258,7 +264,14 @@ void sendLocalhostHttpRequest(std::monostate,
     }
 };
 
-void clearAllDictionaries(std::monostate) { clearAll(); };
+void clearAllDictionaries(std::monostate) { 
+    clearAll();
+
+    {                                       // Clear the queue of any now deleted messages
+        std::lock_guard lock(mx);
+        while (!handleQueue.empty()) handleQueue.pop();
+        }
+    };
 
 int createDictionaryRelay(std::monostate) {
     return createDictionary();
