@@ -269,6 +269,8 @@ void clearAllDictionaries(std::monostate) {
 
     {                                       // Clear the queue of any now deleted messages
         std::lock_guard lock(mx);
+        if (!handleQueue.empty()) logger::info("CLEAR: Queue not empty");
+
         while (!handleQueue.empty()) handleQueue.pop();
         }
     };
